@@ -1,0 +1,7 @@
+# Archivo de configuración para NEU (Necesito Espacio Urgente)
+
+# Directorio donde se encuentran tus fotos y videos originales.
+carpeta_entrada = entrada
+
+# Directorio donde se guardarán las fotos (HEIC) y videos (HEVC) reducidos.
+carpeta_salida = salida
