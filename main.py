@@ -12,17 +12,18 @@ import re
 
 register_heif_opener()
 
-# --- Configuración de Rutas y Calidad (Ahora cargadas desde config.txt y valores por defecto) ---
-CONFIG_FILENAME = "config.txt"
+# Cambia la base de recursos para PyInstaller
+def resource_path(relative_path):
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
 
-# BASE_DIRECTORY siempre será el directorio donde se ejecuta el script
-BASE_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
-
-# Rutas de directorio (se inicializan con valores por defecto y luego se cargan desde config.txt)
+# Ajusta las rutas para recursos y configuración
+BASE_DIRECTORY = resource_path("")
+CONFIG_FILENAME = os.path.join(BASE_DIRECTORY, "extra", "config.txt")
+REQUIREMENTS_FILENAME = os.path.join(BASE_DIRECTORY, "extra", "requeriments.txt")
 SOURCE_DIRECTORY = os.path.join(BASE_DIRECTORY, "entrada")
 OUTPUT_DIRECTORY = os.path.join(BASE_DIRECTORY, "salida")
-
-# Valores por defecto para calidad y rendimiento (ahora directamente en el código)
 HEIC_QUALITY = 70
 HEVC_CRF = 28
 HEVC_PRESET = "Fast 1080p30"
@@ -32,20 +33,20 @@ MAX_WORKERS = max(1, int(os.cpu_count() * 0.8)) if os.cpu_count() else 4
 MAX_RETRIES_FILE_OPS = 15
 RETRY_DELAY_FILE_OPS = 0.5
 DEBUG_MODE = True
+DEVELOPER_MODE = False
 
+def clear_console():
+    if os.name == 'nt':
+        os.system('cls')
+    else:
+        os.system('clear')
 
 def load_configuration():
-    """Carga las rutas de directorio desde config.txt.
-    Si el archivo no existe o hay un error, usa las rutas por defecto y crea las carpetas necesarias."""
-    global SOURCE_DIRECTORY, OUTPUT_DIRECTORY
-
+    global SOURCE_DIRECTORY, OUTPUT_DIRECTORY, DEVELOPER_MODE
     config_path = os.path.join(BASE_DIRECTORY, CONFIG_FILENAME)
-
-    # Valores por defecto para las rutas (ya están asignados globalmente, pero se refuerzan aquí)
     default_source_subdir = "entrada"
     default_output_subdir = "salida"
 
-    # Intentar cargar desde config.txt
     if os.path.exists(config_path):
         config_values = {}
         try:
@@ -57,44 +58,38 @@ def load_configuration():
                     if '=' in line:
                         key, value = line.split('=', 1)
                         config_values[key.strip()] = value.strip()
-        except Exception as e:
-            print(f"❌ Error al leer el archivo de configuración '{CONFIG_FILENAME}': {e}. Se usarán las rutas por defecto.")
+        except Exception:
+            print(f"❌ Error al leer el archivo de configuración '{CONFIG_FILENAME}'. Se usarán las rutas por defecto.")
 
-        source_dir_from_config = config_values.get("carpeta_entrada")
-        output_dir_from_config = config_values.get("carpeta_salida")
-
-        if source_dir_from_config:
-            SOURCE_DIRECTORY = os.path.abspath(os.path.join(BASE_DIRECTORY, source_dir_from_config))
-        if output_dir_from_config:
-            OUTPUT_DIRECTORY = os.path.abspath(os.path.join(BASE_DIRECTORY, output_dir_from_config))
+        if config_values.get("modo-desarrollador", "").upper() == "SI":
+            SOURCE_DIRECTORY = os.path.join(BASE_DIRECTORY, "extra", "archivos-ejemplo")
+            DEVELOPER_MODE = True
+        else:
+            source_dir_from_config = config_values.get("carpeta_entrada")
+            output_dir_from_config = config_values.get("carpeta_salida")
+            if source_dir_from_config:
+                SOURCE_DIRECTORY = os.path.abspath(os.path.join(BASE_DIRECTORY, source_dir_from_config))
+            if output_dir_from_config:
+                OUTPUT_DIRECTORY = os.path.abspath(os.path.join(BASE_DIRECTORY, output_dir_from_config))
     else:
         print(f"⚠️ El archivo de configuración '{CONFIG_FILENAME}' no se encontró.")
-        print(f"Se ha creado un archivo '{CONFIG_FILENAME}' con las rutas por defecto.")
-        # Crear el archivo de configuración con las rutas por defecto si no existe
         try:
             with open(config_path, 'w', encoding='utf-8') as f:
                 f.write("# Archivo de configuración para NEU (Necesito Espacio Urgente)\n\n")
                 f.write(f"carpeta_entrada = {default_source_subdir}\n")
                 f.write(f"carpeta_salida = {default_output_subdir}\n")
         except Exception as e:
-            print(f"❌ Error al crear el archivo de configuración '{CONFIG_FILENAME}'. Asegúrate de que el script tenga permisos de escritura: {e}.")
+            print(f"❌ Error al crear el archivo de configuración '{CONFIG_FILENAME}': {e}")
 
-    # Crea los directorios si no existen, basados en la configuración (o por defecto)
     os.makedirs(SOURCE_DIRECTORY, exist_ok=True)
     os.makedirs(OUTPUT_DIRECTORY, exist_ok=True)
 
-
-# Llamar a load_configuration al inicio
 load_configuration()
-# --- FIN de Configuración de Rutas y Calidad ---
 
-# Ruta de las herramientas externas directamente en 'extra/'
 EXTERNAL_TOOLS_DIRECTORY = os.path.join(BASE_DIRECTORY, "extra")
 LOG_FILENAME = os.path.join(BASE_DIRECTORY, "extra", "logs.txt")
-
 IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.gif', '.heic', '.heif')
 VIDEO_EXTENSIONS = ('.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv')
-
 original_stdout = sys.stdout
 original_stderr = sys.stderr
 log_file_handle = None
@@ -103,12 +98,10 @@ class CustomStream:
     def __init__(self, terminal_stream, file_stream):
         self.terminal = terminal_stream
         self.file = file_stream
-
     def write(self, message):
         self.terminal.write(message)
         self.file.write(message)
         self.flush()
-
     def flush(self):
         self.terminal.flush()
         self.file.flush()
@@ -140,7 +133,7 @@ def format_time_short(seconds):
 
 def check_binary_exists_in_path_or_dir(binary_name, specific_dir=None):
     if specific_dir:
-        # Add specific_dir to the beginning of PATH to prioritize it
+
         os.environ["PATH"] = specific_dir + os.pathsep + os.environ["PATH"]
         _debug_print(f"PATH modificado temporalmente para incluir: {specific_dir}")
     return shutil.which(binary_name) is not None
@@ -151,9 +144,9 @@ def convert_image_to_heic(input_path, output_path, quality, original_exif=None):
         img = Image.open(input_path)
         if img.mode not in ('RGB', 'RGBA', 'L'):
             img = img.convert('RGB')
-        elif img.mode == 'P': # Paletted images need conversion to RGB
+        elif img.mode == 'P': 
             img = img.convert('RGB')
-        
+
         img.save(output_path, format="HEIF", quality=quality, exif=original_exif)
         _debug_print(f"Imagen {os.path.basename(input_path)} guardada exitosamente.")
         return True
@@ -178,9 +171,8 @@ def convert_video_to_hevc(input_path, output_path, crf, preset, enable_gpu, gpu_
         "--all-audio",
         "--all-subtitles",
     ]
-    if preset and encoder_option == "x265": # Presets are specific to x265, not generic for all encoders
+    if preset and encoder_option == "x265": 
         command.extend(["--preset", preset])
-
 
     creation_flags = 0
     if platform.system() == "Windows":
@@ -224,8 +216,8 @@ def copy_metadata_with_exiftool(source_path, target_path, max_retries, retry_del
 
     for attempt in range(max_retries):
         try:
-            time.sleep(0.1) # Small delay to ensure file system is ready
-            
+            time.sleep(0.1) 
+
             if not os.path.exists(target_path) or os.path.getsize(target_path) == 0:
                 if attempt < max_retries - 1:
                     original_stdout.write(f"\r     ⚠️ ExifTool: El archivo de destino {os.path.basename(target_path)} no está listo para metadatos (intento {attempt + 1}/{max_retries}). Reintentando...")
@@ -237,7 +229,7 @@ def copy_metadata_with_exiftool(source_path, target_path, max_retries, retry_del
                     return False
 
             command = ["exiftool", "-TagsFromFile", source_path, "-all:all", "-overwrite_original", "-P"]
-            
+
             if new_modification_date_timestamp:
                 dt_object = datetime.datetime.fromtimestamp(new_modification_date_timestamp)
                 exiftool_date_format = dt_object.strftime("%Y:%m:%d %H:%M:%S")
@@ -245,7 +237,7 @@ def copy_metadata_with_exiftool(source_path, target_path, max_retries, retry_del
                 _debug_print(f"Estableciendo fecha de modificacion del archivo a: {exiftool_date_format}")
 
             command.append(target_path)
-            
+
             _debug_print(f"Comando ExifTool: {' '.join(command)}")
 
             result = subprocess.run(command, capture_output=True, text=True, check=False)
@@ -295,11 +287,13 @@ def process_file_task(input_path, output_directory, heic_quality, hevc_crf, hevc
     if ext_lower in IMAGE_EXTENSIONS:
         output_filename = f"{name}.heic"
         output_path = os.path.join(output_subdir, output_filename)
-        
-        # Skip if output file exists and is newer than input file
-        if os.path.exists(output_path) and os.path.getmtime(output_path) > os.path.getmtime(input_path):
-            return "skipped_already_processed", os.path.basename(input_path), original_size 
 
+        is_example_photo = DEVELOPER_MODE and os.path.commonpath([input_path, os.path.join(BASE_DIRECTORY, "extra", "archivos-ejemplo")]) == os.path.join(BASE_DIRECTORY, "extra", "archivos-ejemplo")
+
+        if os.path.exists(output_path) and os.path.getmtime(output_path) > os.path.getmtime(input_path):
+            if not is_example_photo:
+                return "skipped_already_processed", os.path.basename(input_path), original_size
+        # Si es foto de ejemplo en modo desarrollador, siempre procesa
         try:
             img = Image.open(input_path)
             if 'exif' in img.info:
@@ -309,23 +303,22 @@ def process_file_task(input_path, output_directory, heic_quality, hevc_crf, hevc
             _debug_print(f"No se pudo leer EXIF de {os.path.basename(input_path)}: {e}")
 
         conversion_successful_tool = convert_image_to_heic(input_path, output_path, heic_quality, original_exif_data)
-        
+
     elif ext_lower in VIDEO_EXTENSIONS:
         output_filename = f"{name}.mp4" 
         output_path = os.path.join(output_subdir, output_filename)
 
-        # Skip if output file exists and is newer than input file
         if os.path.exists(output_path) and os.path.getmtime(output_path) > os.path.getmtime(input_path):
             return "skipped_already_processed", os.path.basename(input_path), original_size
 
         conversion_successful_tool = convert_video_to_hevc(input_path, output_path, hevc_crf, hevc_preset, enable_gpu_accel, gpu_encoder_name)
-        
+
     else:
         return "skipped_unsupported", os.path.basename(input_path), original_size
 
     if conversion_successful_tool and output_path and os.path.exists(output_path) and os.path.getsize(output_path) > 0:
         _debug_print(f"Archivo de salida {os.path.basename(output_path)} existe y no está vacío.")
-        
+
         new_mod_date_timestamp = None
         if ext_lower in VIDEO_EXTENSIONS:
             match = re.search(r'(\d{8})', name)
@@ -333,7 +326,7 @@ def process_file_task(input_path, output_directory, heic_quality, hevc_crf, hevc
                 date_str = match.group(1)
                 try:
                     dt_object = datetime.datetime.strptime(date_str, "%Y%m%d")
-                    # Set time to 00:00:00 for consistency if only date is extracted
+
                     dt_object = dt_object.replace(hour=0, minute=0, second=0, microsecond=0)
                     new_mod_date_timestamp = dt_object.timestamp()
                     _debug_print(f"Fecha de modificación detectada en el nombre del video: {date_str}. Estableciendo a: {dt_object}")
@@ -345,7 +338,7 @@ def process_file_task(input_path, output_directory, heic_quality, hevc_crf, hevc
         copy_metadata_successful = copy_metadata_with_exiftool(input_path, output_path, max_retries, retry_delay, new_mod_date_timestamp)
         if not copy_metadata_successful:
             print(f"\n     ⚠️ Advertencia: No se pudieron copiar todos los metadatos para {os.path.basename(input_path)}. El archivo convertido se mantiene.")
-        
+
         try:
             if new_mod_date_timestamp:
                 os.utime(output_path, (new_mod_date_timestamp, new_mod_date_timestamp))
@@ -362,10 +355,10 @@ def process_file_task(input_path, output_directory, heic_quality, hevc_crf, hevc
                     else:
                         _debug_print(f"Archivo de salida {os.path.basename(output_path)} no listo (intento {attempt + 1}/{max_retries}), reintentando utime...")
                         time.sleep(retry_delay)
-                
+
                 if not file_ready_for_utime:
                     print(f"\n     ⚠️ Advertencia: Archivo de salida no encontrado o vacío en {output_path} después de reintentos para copiar fecha. No se pudo establecer la fecha de modificación.")
-            
+
             final_processing_successful = True
 
         except Exception as e:
@@ -378,6 +371,10 @@ def process_file_task(input_path, output_directory, heic_quality, hevc_crf, hevc
 
     if final_processing_successful:
         try:
+            # No borrar fotos de ejemplo si está activado el modo desarrollador
+            if DEVELOPER_MODE and os.path.commonpath([input_path, os.path.join(BASE_DIRECTORY, "extra", "archivos-ejemplo")]) == os.path.join(BASE_DIRECTORY, "extra", "archivos-ejemplo"):
+                _debug_print(f"Modo desarrollador activo: no se elimina {os.path.basename(input_path)} (foto de ejemplo).")
+                return "processed", os.path.basename(input_path), original_size
             os.remove(input_path)
             _debug_print(f"Archivo original {os.path.basename(input_path)} eliminado tras conversion exitosa.")
             return "processed", os.path.basename(input_path), original_size
@@ -387,30 +384,43 @@ def process_file_task(input_path, output_directory, heic_quality, hevc_crf, hevc
     else:
         return "failed_conversion", os.path.basename(input_path), original_size
 
-def print_progress(total, processed, skipped_processed, skipped_unsupported, failed, phase_name, start_time_phase, last_update_time):
-    current_time = time.time()
-    update_interval = 1 
-    if current_time - last_update_time < update_interval: 
-        return last_update_time
-
+def print_progress(total, processed, skipped_processed, skipped_unsupported, failed, phase_name, first_progress=False):
     completed = processed + skipped_processed + skipped_unsupported + failed
     percentage = (completed / total) * 100 if total > 0 else 0
-    bar_length = 30 
+    bar_length = 30
     filled_length = int(bar_length * percentage // 100)
     bar = '█' * filled_length + '░' * (bar_length - filled_length)
-
-    elapsed_time_phase = current_time - start_time_phase
-    
-    time_remaining_str = "Estimando..."
-    if completed > 0:
-        avg_time_per_file = elapsed_time_phase / completed
-        remaining_files = total - completed
-        estimated_time_remaining = avg_time_per_file * remaining_files
-        time_remaining_str = format_time_short(estimated_time_remaining)
-
-    sys.stdout.write(f"\r🖼️ {phase_name}: |{bar}| {percentage:.1f}% ({completed}/{total}) ✅ {processed} ⏩ {skipped_processed} 🚫 {skipped_unsupported} ❌ {failed} ⏳ Tiempo restante: {time_remaining_str}")
+    progress_line = f"🖼️ {phase_name}: |{bar}| {percentage:.1f}% ({completed}/{total}) ⏳"
+    if first_progress:
+        # Borra la línea anterior (Procesando Fotos/Videos)
+        sys.stdout.write('\r' + ' ' * 120 + '\r')
+    sys.stdout.write(progress_line + ' ' * 10 + '\r')
     sys.stdout.flush()
-    return current_time
+
+def clear_progress_lines():
+    sys.stdout.write('\r' + ' ' * 120 + '\r')
+    sys.stdout.write(' ' * 120 + '\r')
+    sys.stdout.flush()
+
+def print_fotos_procesadas():
+    clear_progress_lines()
+    print("✅ Fotos procesadas")
+
+def print_final_dashboard_and_summary(total_original_folder_size, num_image_files, num_video_files, dashboard_line, final_output_size):
+    clear_console()
+    print("="*60)
+    print("🗂️  NEU (Necesito Espacio Urgente)")
+    print(f"📸 Imagenes: {num_image_files} | 🎞️  Videos: {num_video_files}")
+    print("="*60)
+    print("🎯 PROCESO COMPLETADO")
+    print("✅ YA PUEDE CERRAR EL PROGRAMA")
+    if total_original_folder_size > 0:
+        ahorro = total_original_folder_size - final_output_size
+        porcentaje = ((total_original_folder_size - final_output_size) / total_original_folder_size) * 100 if total_original_folder_size > final_output_size else 0
+        print("\a", end="")  # Beep de notificación
+        print(f"🏆 Tamaño original: {get_human_readable_size(total_original_folder_size)} | Tamaño final: {get_human_readable_size(final_output_size)} | Espacio Ahorrado: {get_human_readable_size(ahorro)} ({porcentaje:.2f}%)")
+    else:
+        print("No se pudieron calcular las estadísticas de ahorro de espacio.")
 
 def get_directory_size(path):
     total_size = 0
@@ -427,17 +437,10 @@ def get_directory_size(path):
     return total_size
 
 def print_initial_stats(total_original_folder_size, num_image_files, num_video_files, num_unsupported_files):
-    print("\n" + "="*60)
-    print("📊 Estadísticas Iniciales de la Galería 📊".center(60))
     print("="*60)
-    print(f"📂 Carpeta de Origen: {SOURCE_DIRECTORY}")
-    print(f"📁 Carpeta de Destino: {OUTPUT_DIRECTORY}")
-    print(f"📏 Tamaño Total de Origen: {get_human_readable_size(total_original_folder_size)}")
-    print(f"📸 Archivos de Imagen detectados: {num_image_files}")
-    print(f"🎞️ Archivos de Video detectados: {num_video_files}")
-    print(f"🚫 Archivos no soportados: {num_unsupported_files}")
-    print("\n⚠️ ¡ATENCIÓN! Los archivos originales **SE BORRARÁN AUTOMÁTICAMENTE** tras una conversión exitosa Y verificada.")
-    print("="*60 + "\n")
+    print("🗂️  NEU (Necesito Espacio Urgente)")
+    print(f"📏 Tamaño Original: {get_human_readable_size(total_original_folder_size)} | 📸 Imagenes: {num_image_files} | 🎞️  Videos: {num_video_files}")
+    print("="*60)
 
 def process_gallery():
     global log_file_handle
@@ -445,36 +448,33 @@ def process_gallery():
 
     try:
         os.makedirs(os.path.join(BASE_DIRECTORY, "extra"), exist_ok=True)
-        # EXTERNAL_TOOLS_DIRECTORY is now just 'extra'
-        # No need to create another subdirectory like 'herramientas-externas'
-        
+
         log_file_handle = open(LOG_FILENAME, "w", encoding="utf-8") 
         sys.stdout = CustomStream(original_stdout, log_file_handle)
         sys.stderr = CustomStream(original_stderr, log_file_handle)
 
         original_path = os.environ.get("PATH", "")
-        # Add EXTERNAL_TOOLS_DIRECTORY directly to PATH
+
         os.environ["PATH"] = EXTERNAL_TOOLS_DIRECTORY + os.pathsep + original_path
 
         if not check_binary_exists_in_path_or_dir("HandBrakeCLI"):
             print("ERROR: HandBrakeCLI no encontrado en tu PATH ni en la carpeta 'extra'. Asegúrate de que esté instalado y accesible.")
             print("       Sin HandBrakeCLI, la conversión de video no funcionará.")
-            os.environ["PATH"] = original_path # Restore PATH before exiting
+            os.environ["PATH"] = original_path 
             return
         if not check_binary_exists_in_path_or_dir("exiftool"):
             print("ERROR: exiftool no encontrado en tu PATH ni en la carpeta 'extra'. Asegúrate de que esté instalado y accesible.")
             print("       Sin exiftool, la copia de metadatos y fechas de modificación no funcionará correctamente.")
-            os.environ["PATH"] = original_path # Restore PATH before exiting
+            os.environ["PATH"] = original_path 
             return
 
-        # La creación de SOURCE_DIRECTORY y OUTPUT_DIRECTORY ya se maneja en load_configuration
         if not os.path.exists(SOURCE_DIRECTORY):
             print(f"Error: El directorio de origen no existe: {SOURCE_DIRECTORY}")
             os.environ["PATH"] = original_path
             return
 
         all_files_categorized = []
-        
+
         for root, _, files in os.walk(SOURCE_DIRECTORY):
             for filename in files:
                 file_path = os.path.join(root, filename)
@@ -489,9 +489,9 @@ def process_gallery():
                         all_files_categorized.append((file_path, "unsupported", file_size)) 
                 except Exception as e:
                     print(f"\n     ⚠️ No se pudo acceder al archivo {filename} ({file_path}): {e}")
-        
+
         total_original_folder_size = get_directory_size(SOURCE_DIRECTORY) 
-        
+
         image_files_to_process = [(f[0], f[2]) for f in all_files_categorized if f[1] == "image"]
         video_files_to_process = [(f[0], f[2]) for f in all_files_categorized if f[1] == "video"]
         unsupported_files = [(f[0], f[2]) for f in all_files_categorized if f[1] == "unsupported"]
@@ -501,6 +501,7 @@ def process_gallery():
         total_unsupported = len(unsupported_files)
 
         print_initial_stats(total_original_folder_size, total_images, total_videos, total_unsupported)
+        dashboard_line = f"📏 Tamaño Original: {get_human_readable_size(total_original_folder_size)} | 📸 Imagenes: {total_images} | 🎞️  Videos: {total_videos}"
 
         if not all_files_categorized:
             print("No se encontraron archivos de imagen o video soportados para procesar.")
@@ -513,15 +514,11 @@ def process_gallery():
         overall_failed_count = 0
 
         if total_images > 0:
-            print("\n📸 Comenzando Procesamiento de Fotos")
             processed_count_img = 0
             skipped_processed_count_img = 0
             skipped_unsupported_count_img = 0
             failed_count_img = 0
-            start_time_images = time.time()
-            last_update_time_images = time.time()
-            print_progress(total_images, processed_count_img, skipped_processed_count_img, skipped_unsupported_count_img, failed_count_img, "Fotos", start_time_images, last_update_time_images)
-
+            first_progress = True
             with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
                 future_to_file = {
                     executor.submit(
@@ -559,21 +556,18 @@ def process_gallery():
                         print(f'\n     ❌ El archivo {os.path.basename(file_path)} generó una excepción inesperada: {exc}')
                         failed_count_img += 1
                         overall_failed_count += 1
-                    
-                    last_update_time_images = print_progress(total_images, processed_count_img, skipped_processed_count_img, skipped_unsupported_count_img, failed_count_img, "Fotos", start_time_images, last_update_time_images)
-            sys.stdout.write('\n') 
-            print(f"--- 📸 Fotos terminadas. Completadas: {processed_count_img}, Saltadas (ya procesadas): {skipped_processed_count_img}, Errores: {failed_count_img} ---")
+
+                    print_progress(total_images, processed_count_img, skipped_processed_count_img, skipped_unsupported_count_img, failed_count_img, "Fotos", first_progress=first_progress)
+                    first_progress = False
+            print_fotos_procesadas()
 
         if total_videos > 0:
-            print("\n🎬 Comenzando Procesamiento de Videos")
+            print("🎬 Procesando Videos")
             processed_count_vid = 0
             skipped_processed_count_vid = 0
             skipped_unsupported_count_vid = 0
             failed_count_vid = 0
-            start_time_videos = time.time()
-            last_update_time_videos = time.time()
-            print_progress(total_videos, processed_count_vid, skipped_processed_count_vid, skipped_unsupported_count_vid, failed_count_vid, "Videos", start_time_videos, last_update_time_videos)
-
+            first_progress = True
             with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
                 future_to_file = {
                     executor.submit(
@@ -611,9 +605,10 @@ def process_gallery():
                         print(f'\n     ❌ El archivo {os.path.basename(file_path)} generó una excepción inesperada: {exc}')
                         failed_count_vid += 1
                         overall_failed_count += 1
-                    
-                    last_update_time_videos = print_progress(total_videos, processed_count_vid, skipped_processed_count_vid, skipped_unsupported_count_vid, failed_count_vid, "Videos", start_time_videos, last_update_time_videos)
-            sys.stdout.write('\n')
+
+                    print_progress(total_videos, processed_count_vid, skipped_processed_count_vid, skipped_unsupported_count_vid, failed_count_vid, "Videos", first_progress=first_progress)
+                    first_progress = False
+            clear_progress_lines()
             print(f"--- 🎞️  Videos terminados. Completadas: {processed_count_vid}, Saltadas (ya procesadas): {skipped_processed_count_vid}, Errores: {failed_count_vid} ---")
 
         if total_unsupported > 0:
@@ -624,24 +619,13 @@ def process_gallery():
             print(f"--- Total de Archivos Ignorados: {total_unsupported} ---")
 
         final_output_size = get_directory_size(OUTPUT_DIRECTORY)
-        
-        print("\n" + "="*60)
-        print("🎉✨ Proceso Completo de Galería ✨🎉".center(60))
-        print("="*60)
-        print(f"✅ Archivos procesados exitosamente: {overall_processed_count}")
-        print(f"⏩ Archivos saltados (ya procesados): {overall_skipped_already_processed_count}")
-        print(f"🚫 Archivos saltados (extensión no soportada): {overall_skipped_unsupported_count}")
-        print(f"❌ Archivos con errores: {overall_failed_count}")
-        print(f"📊 Tamaño Total Original: {get_human_readable_size(total_original_folder_size)}")
-        print(f"💾 Tamaño Total de Salida: {get_human_readable_size(final_output_size)}")
-        
-        if total_original_folder_size > 0:
-            percentage_saved = ((total_original_folder_size - final_output_size) / total_original_folder_size) * 100 if total_original_folder_size > final_output_size else 0
-            print(f" economizado: {percentage_saved:.2f}% del espacio total")
-        else:
-            print(" no se pudieron calcular las estadísticas de ahorro de espacio.")
-
-        print("="*60 + "\n")
+        print_final_dashboard_and_summary(
+            total_original_folder_size,
+            total_images,
+            total_videos,
+            dashboard_line,
+            final_output_size
+        )
 
     except Exception as main_e:
         print(f"\n\n🚨 ¡HA OCURRIDO UN ERROR CRÍTICO EN EL PROGRAMA PRINCIPAL! 🚨")
@@ -650,10 +634,18 @@ def process_gallery():
     finally:
         if log_file_handle:
             log_file_handle.close()
-        sys.stdout = original_stdout # Restore original stdout
-        sys.stderr = original_stderr # Restore original stderr
-        # Restore original PATH
+        sys.stdout = original_stdout 
+        sys.stderr = original_stderr 
+
         os.environ["PATH"] = original_path
 
 if __name__ == "__main__":
-    process_gallery()
+    try:
+        process_gallery()
+    except Exception as e:
+        import traceback
+        print("\n\n🚨 ERROR CRÍTICO 🚨\n", e)
+        traceback.print_exc()
+        input("\nPresiona ENTER para salir...")
+    else:
+        input("\nPresiona ENTER para salir...")
