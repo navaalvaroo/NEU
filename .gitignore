@@ -1,18 +1,1 @@
-
-# Ignora todo por defecto
-/*
-
-# Permite la carpeta codigo y su contenido
-!codigo/
-!codigo/**
-
-# Permite los archivos .exe dentro de la carpeta codigo (y subcarpetas)
-!codigo/**/*.exe
-
-# Opcional: ignora archivos temporales de PyInstaller y otros
-build/
-dist/
-*.spec
-*.log
-*.pyc
-__pycache__/
+main.exe
