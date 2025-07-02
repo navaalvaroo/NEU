@@ -19,7 +19,7 @@ def resource_path(relative_path):
     return os.path.join(os.path.abspath("."), relative_path)
 
 # Ajusta las rutas para recursos y configuración
-BASE_DIRECTORY = resource_path("")
+BASE_DIRECTORY = resource_path(os.path.dirname(__file__))
 CONFIG_FILENAME = os.path.join(BASE_DIRECTORY, "extra", "config.txt")
 REQUIREMENTS_FILENAME = os.path.join(BASE_DIRECTORY, "extra", "requeriments.txt")
 SOURCE_DIRECTORY = os.path.join(BASE_DIRECTORY, "entrada")
@@ -95,8 +95,11 @@ def load_configuration():
             OUTPUT_DIRECTORY = os.path.join(BASE_DIRECTORY, default_output_subdir)
 
     # Crea las carpetas de entrada y salida si no existen
+    # Crea las carpetas de entrada, salida y logs en el mismo directorio que el .py/.exe
     os.makedirs(SOURCE_DIRECTORY, exist_ok=True)
     os.makedirs(OUTPUT_DIRECTORY, exist_ok=True)
+    os.makedirs(os.path.join(BASE_DIRECTORY, "extra"), exist_ok=True)
+    os.makedirs(os.path.join(BASE_DIRECTORY, "extra", "archivos-ejemplo"), exist_ok=True)
 
 load_configuration()
 
@@ -146,11 +149,20 @@ def format_time_short(seconds):
     return f"{h:02}h {m:02}m {s:02}s"
 
 def check_binary_exists_in_path_or_dir(binary_name, specific_dir=None):
+    # Busca primero en el PATH
+    if shutil.which(binary_name):
+        return True
+    # Si no está en el PATH, busca en el directorio extra (junto al .py/.exe)
     if specific_dir:
-
-        os.environ["PATH"] = specific_dir + os.pathsep + os.environ["PATH"]
-        _debug_print(f"PATH modificado temporalmente para incluir: {specific_dir}")
-    return shutil.which(binary_name) is not None
+        bin_path = os.path.join(specific_dir, binary_name)
+        if os.path.exists(bin_path):
+            return bin_path
+        # En Windows, prueba con .exe
+        if platform.system() == "Windows":
+            bin_path_exe = os.path.join(specific_dir, binary_name + ".exe")
+            if os.path.exists(bin_path_exe):
+                return bin_path_exe
+    return False
 
 def convert_image_to_heic(input_path, output_path, quality, original_exif=None):
     _debug_print(f"Convirtiendo imagen: {os.path.basename(input_path)} a {os.path.basename(output_path)}")
@@ -176,8 +188,15 @@ def convert_video_to_hevc(input_path, output_path, crf, preset, enable_gpu, gpu_
     elif enable_gpu and not gpu_encoder:
         print(f"\n     ⚠️ Advertencia: Aceleración por GPU está habilitada pero no se ha especificado ENCODER_GPU. Usando CPU (x265) para {os.path.basename(input_path)}.")
 
+        # Buscar HandBrakeCLI en PATH o en extra
+    handbrake_path = check_binary_exists_in_path_or_dir("HandBrakeCLI", EXTERNAL_TOOLS_DIRECTORY)
+    if isinstance(handbrake_path, str):
+        handbrake_cmd = handbrake_path
+    else:
+        handbrake_cmd = "HandBrakeCLI"
+
     command = [
-        "HandBrakeCLI",
+        handbrake_cmd,
         "-i", input_path,
         "-o", output_path,
         "-e", encoder_option,
@@ -242,7 +261,13 @@ def copy_metadata_with_exiftool(source_path, target_path, max_retries, retry_del
                     print(f"\n     ❌ ExifTool: El archivo de destino {os.path.basename(target_path)} no existe o está vacío después de varios intentos. No se pudieron copiar metadatos.")
                     return False
 
-            command = ["exiftool", "-TagsFromFile", source_path, "-all:all", "-overwrite_original", "-P"]
+            # Buscar exiftool en PATH o en extra
+            exiftool_path = check_binary_exists_in_path_or_dir("exiftool", EXTERNAL_TOOLS_DIRECTORY)
+            if isinstance(exiftool_path, str):
+                exiftool_cmd = exiftool_path
+            else:
+                exiftool_cmd = "exiftool"
+            command = [exiftool_cmd, "-TagsFromFile", source_path, "-all:all", "-overwrite_original", "-P"]
 
             if new_modification_date_timestamp:
                 dt_object = datetime.datetime.fromtimestamp(new_modification_date_timestamp)
@@ -469,14 +494,16 @@ def process_gallery():
 
         original_path = os.environ.get("PATH", "")
 
-        os.environ["PATH"] = EXTERNAL_TOOLS_DIRECTORY + os.pathsep + original_path
-
-        if not check_binary_exists_in_path_or_dir("HandBrakeCLI"):
+                # Buscar HandBrakeCLI en PATH o en extra
+        handbrake_path = check_binary_exists_in_path_or_dir("HandBrakeCLI", EXTERNAL_TOOLS_DIRECTORY)
+        if not handbrake_path:
             print("ERROR: HandBrakeCLI no encontrado en tu PATH ni en la carpeta 'extra'. Asegúrate de que esté instalado y accesible.")
             print("       Sin HandBrakeCLI, la conversión de video no funcionará.")
             os.environ["PATH"] = original_path 
             return
-        if not check_binary_exists_in_path_or_dir("exiftool"):
+        # Buscar exiftool en PATH o en extra
+        exiftool_path = check_binary_exists_in_path_or_dir("exiftool", EXTERNAL_TOOLS_DIRECTORY)
+        if not exiftool_path:
             print("ERROR: exiftool no encontrado en tu PATH ni en la carpeta 'extra'. Asegúrate de que esté instalado y accesible.")
             print("       Sin exiftool, la copia de metadatos y fechas de modificación no funcionará correctamente.")
             os.environ["PATH"] = original_path 
