@@ -28,6 +28,18 @@ if exist main.exe (
     )
 )
 REM Compila el script principal con PyInstaller
+REM Comprueba que los binarios necesarios existen antes de compilar
+if not exist "codigo\extra\HandBrakeCLI.exe" (
+    echo [ERROR] Falta HandBrakeCLI.exe en codigo\extra. Coloca el binario antes de compilar.
+    pause
+    exit /b 1
+)
+if not exist "codigo\extra\exiftool.exe" (
+    echo [ERROR] Falta exiftool.exe en codigo\extra. Coloca el binario antes de compilar.
+    pause
+    exit /b 1
+)
+REM Compila incluyendo toda la carpeta extra y subcarpetas
 pyinstaller --onefile --add-data "codigo/extra;codigo/extra" --add-data "codigo/entrada;codigo/entrada" --add-data "codigo/salida;codigo/salida" --distpath . --noconfirm --clean codigo/main.py --name main
 if exist dist\main.exe move /Y dist\main.exe . >nul 2>&1
 REM Limpia archivos temporales de PyInstaller
