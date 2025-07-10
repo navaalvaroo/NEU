@@ -13,3 +13,6 @@ Programa diseñado para reducir el espacio de tu galería significativamente, si
 3. **Copia** las **fotos** y **videos**, en la **carpeta entrada**.
 
 <img src="codigo/extra/readme-3.png" alt="tercer paso imagen" width="400"/>
+
+4. Vuelve a la carpeta original y **ejecuta** el archivo **main.exe**.
+5. Espera a que termine el programa y obten los archivos de la carpeta salida
