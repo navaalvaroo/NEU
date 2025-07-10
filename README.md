@@ -1,10 +1,15 @@
 ## 📌 NEU (Necesito Espacio Urgente)
-Programa diseñado para reducir el espacio de tu galeria significativamente, si necesitas espacio extra.
+Programa diseñado para reducir el espacio de tu galería significativamente, si necesitas espacio extra.
 
-## 🗂️ Guia de Uso
+## 🗂️ Guía de Uso
 **Descarga los archivos necesarios**
-![primer paso imagen](codigo/extra/readme-1.png)
+
+<img src="codigo/extra/readme-1.png" alt="primer paso imagen" width="400"/>
+
 **Ejecuta** el archivo "**build.bat**" con permisos de administrador.
-![segundo paso imagen](codigo/extra/readme-2.png)
+
+<img src="codigo/extra/readme-2.png" alt="segundo paso imagen" width="400"/>
+
 **Copia** las **fotos** y **videos**, en la **carpeta entrada**.
-![tercer paso imagen](codigo/extra/readme-3.png)
+
+<img src="codigo/extra/readme-3.png" alt="tercer paso imagen" width="400"/>
