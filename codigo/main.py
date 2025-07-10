@@ -13,13 +13,36 @@ import re
 register_heif_opener()
 
 # Cambia la base de recursos para PyInstaller
+
+
+# Devuelve la ruta base de la carpeta 'codigo' (siempre busca recursos en 'codigo/extra', 'codigo/entrada', 'codigo/salida')
+
+# Siempre busca recursos en la carpeta 'codigo/extra', 'codigo/entrada', 'codigo/salida' junto al ejecutable/script
+def codigo_base_dir():
+    if getattr(sys, 'frozen', False):
+        exe_dir = os.path.dirname(sys.executable)
+    else:
+        exe_dir = os.path.dirname(os.path.abspath(__file__))
+    # Busca la carpeta 'codigo' en el mismo nivel que el ejecutable/script
+    codigo_dir = os.path.join(exe_dir, "codigo")
+    if os.path.isdir(codigo_dir):
+        return codigo_dir
+    # Si ya estamos dentro de 'codigo', no añadir nada
+    if os.path.basename(exe_dir).lower() == "codigo":
+        return exe_dir
+    # Si no existe, error explícito
+    print("❌ ERROR: No se encontró la carpeta 'codigo' en la ruta esperada. Debes ejecutar el programa desde la raíz del proyecto o tener la estructura correcta.")
+    sys.exit(1)
+
+# Devuelve la ruta para recursos embebidos (solo iconos, archivos de ejemplo, etc)
 def resource_path(relative_path):
     if hasattr(sys, '_MEIPASS'):
-        return os.path.join(sys._MEIPASS, relative_path)
-    return os.path.join(os.path.abspath("."), relative_path)
+        base = sys._MEIPASS
+    else:
+        base = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base, relative_path)
 
-# Ajusta las rutas para recursos y configuración
-BASE_DIRECTORY = resource_path(os.path.dirname(__file__))
+BASE_DIRECTORY = codigo_base_dir()
 CONFIG_FILENAME = os.path.join(BASE_DIRECTORY, "extra", "config.txt")
 REQUIREMENTS_FILENAME = os.path.join(BASE_DIRECTORY, "extra", "requeriments.txt")
 SOURCE_DIRECTORY = os.path.join(BASE_DIRECTORY, "entrada")
@@ -47,18 +70,16 @@ def load_configuration():
     default_source_subdir = "entrada"
     default_output_subdir = "salida"
 
-    # Asegura que la carpeta 'extra' exista antes de crear el archivo de configuración
-    extra_dir = os.path.join(BASE_DIRECTORY, "extra")
-    os.makedirs(extra_dir, exist_ok=True)
 
-    # Si no existe el archivo de configuración, créalo con valores por defecto
+    # Si no existe config.txt, lo crea con modo desarrollador desactivado
     if not os.path.exists(config_path):
-        print(f"⚠️ El archivo de configuración '{config_path}' no se encontró. Creando archivo por defecto...")
+        print(f"⚠️ El archivo de configuración '{config_path}' no se encontró. Creando archivo por defecto (modo desarrollador desactivado)...")
         try:
             with open(config_path, 'w', encoding='utf-8') as f:
                 f.write("# Archivo de configuración para NEU (Necesito Espacio Urgente)\n\n")
                 f.write(f"carpeta_entrada = {default_source_subdir}\n")
                 f.write(f"carpeta_salida = {default_output_subdir}\n")
+                f.write("modo-desarrollador = NO\n")
         except Exception as e:
             print(f"❌ Error al crear el archivo de configuración '{config_path}': {e}")
 
@@ -94,12 +115,7 @@ def load_configuration():
         else:
             OUTPUT_DIRECTORY = os.path.join(BASE_DIRECTORY, default_output_subdir)
 
-    # Crea las carpetas de entrada y salida si no existen
-    # Crea las carpetas de entrada, salida y logs en el mismo directorio que el .py/.exe
-    os.makedirs(SOURCE_DIRECTORY, exist_ok=True)
-    os.makedirs(OUTPUT_DIRECTORY, exist_ok=True)
-    os.makedirs(os.path.join(BASE_DIRECTORY, "extra"), exist_ok=True)
-    os.makedirs(os.path.join(BASE_DIRECTORY, "extra", "archivos-ejemplo"), exist_ok=True)
+    # No crear carpetas automáticamente
 
 load_configuration()
 
@@ -149,19 +165,25 @@ def format_time_short(seconds):
     return f"{h:02}h {m:02}m {s:02}s"
 
 def check_binary_exists_in_path_or_dir(binary_name, specific_dir=None):
-    # Busca primero en el PATH
-    if shutil.which(binary_name):
-        return True
-    # Si no está en el PATH, busca en el directorio extra (junto al .py/.exe)
+    # Busca primero en el directorio extra (junto al .py/.exe o en _MEIPASS)
     if specific_dir:
-        bin_path = os.path.join(specific_dir, binary_name)
-        if os.path.exists(bin_path):
-            return bin_path
-        # En Windows, prueba con .exe
+        # En Windows, prueba primero con .exe
         if platform.system() == "Windows":
             bin_path_exe = os.path.join(specific_dir, binary_name + ".exe")
             if os.path.exists(bin_path_exe):
                 return bin_path_exe
+            else:
+                print(f"[DEBUG] No se encontró {binary_name}.exe en: {bin_path_exe}")
+        # Luego prueba sin extensión
+        bin_path = os.path.join(specific_dir, binary_name)
+        if os.path.exists(bin_path):
+            return bin_path
+        else:
+            print(f"[DEBUG] No se encontró {binary_name} en: {bin_path}")
+    # Si no está en extra, busca en el PATH
+    path_result = shutil.which(binary_name)
+    if path_result:
+        return path_result
     return False
 
 def convert_image_to_heic(input_path, output_path, quality, original_exif=None):
@@ -485,28 +507,38 @@ def process_gallery():
     global log_file_handle
     global original_stdout, original_stderr
 
-    try:
-        os.makedirs(os.path.join(BASE_DIRECTORY, "extra"), exist_ok=True)
 
+    try:
+
+        # No crear carpetas automáticamente
         log_file_handle = open(LOG_FILENAME, "w", encoding="utf-8") 
         sys.stdout = CustomStream(original_stdout, log_file_handle)
         sys.stderr = CustomStream(original_stderr, log_file_handle)
 
         original_path = os.environ.get("PATH", "")
 
-                # Buscar HandBrakeCLI en PATH o en extra
-        handbrake_path = check_binary_exists_in_path_or_dir("HandBrakeCLI", EXTERNAL_TOOLS_DIRECTORY)
+        # Verifica si HandBrakeCLI está disponible
+        handbrake_path = check_binary_exists_in_path_or_dir("HandBrakeCLI", os.path.join(BASE_DIRECTORY, "extra"))
         if not handbrake_path:
-            print("ERROR: HandBrakeCLI no encontrado en tu PATH ni en la carpeta 'extra'. Asegúrate de que esté instalado y accesible.")
-            print("       Sin HandBrakeCLI, la conversión de video no funcionará.")
+            print(f"❌ ERROR: No se encontró HandBrakeCLI.")
+            print("   Descarga HandBrakeCLI para Windows desde: https://handbrake.fr/downloads2.php")
+            print(f"   Lo busqué en: {os.path.join(BASE_DIRECTORY, 'extra', 'HandBrakeCLI.exe')}")
+            print("   Coloca el archivo 'HandBrakeCLI.exe' dentro de la carpeta 'codigo/extra' (junto al .exe).")
+            print("   Sin HandBrakeCLI, la conversión de video NO funcionará.")
             os.environ["PATH"] = original_path 
+            input("\nPresiona ENTER para salir...")
             return
-        # Buscar exiftool en PATH o en extra
-        exiftool_path = check_binary_exists_in_path_or_dir("exiftool", EXTERNAL_TOOLS_DIRECTORY)
+
+        # Verifica si exiftool está disponible
+        exiftool_path = check_binary_exists_in_path_or_dir("exiftool", os.path.join(BASE_DIRECTORY, "extra"))
         if not exiftool_path:
-            print("ERROR: exiftool no encontrado en tu PATH ni en la carpeta 'extra'. Asegúrate de que esté instalado y accesible.")
-            print("       Sin exiftool, la copia de metadatos y fechas de modificación no funcionará correctamente.")
+            print(f"❌ ERROR: No se encontró ExifTool.")
+            print("   Descarga ExifTool para Windows desde: https://exiftool.org/ ")
+            print(f"   Lo busqué en: {os.path.join(BASE_DIRECTORY, 'extra', 'exiftool.exe')}")
+            print("   Coloca el archivo 'exiftool.exe' dentro de la carpeta 'codigo/extra' (junto al .exe).")
+            print("   Sin ExifTool, la copia de metadatos y fechas de modificación NO funcionará correctamente.")
             os.environ["PATH"] = original_path 
+            input("\nPresiona ENTER para salir...")
             return
 
         if not os.path.exists(SOURCE_DIRECTORY):
@@ -545,8 +577,10 @@ def process_gallery():
         dashboard_line = f"📏 Tamaño Original: {get_human_readable_size(total_original_folder_size)} | 📸 Imagenes: {total_images} | 🎞️  Videos: {total_videos}"
 
         if not all_files_categorized:
-            print("No se encontraron archivos de imagen o video soportados para procesar.")
+            print("No se encontraron archivos de imagen o video soportados para procesar en la carpeta de entrada.")
+            print(f"Por favor, coloca tus fotos y videos en: {SOURCE_DIRECTORY}")
             os.environ["PATH"] = original_path
+            input("\nPresiona ENTER para salir...")
             return
 
         overall_processed_count = 0

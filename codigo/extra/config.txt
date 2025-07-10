@@ -1,1 +1,1 @@
-modo-desarrollador = SI
+modo-desarrollador = NO

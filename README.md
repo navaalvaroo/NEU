@@ -2,4 +2,9 @@
 Programa diseñado para reducir el espacio de tu galeria significativamente, si necesitas espacio extra.
 
 ## 🗂️ Guia de Uso
-**Copia** las **fotos** y **videos** originales, en la **carpeta entrada** y **ejecuta el programa**
+**Descarga los archivos necesarios**
+![primer paso imagen](codigo/extra/readme-1.png)
+**Ejecuta** el archivo "**build.bat**" con permisos de administrador.
+![segundo paso imagen](codigo/extra/readme-2.png)
+**Copia** las **fotos** y **videos**, en la **carpeta entrada**.
+![tercer paso imagen](codigo/extra/readme-3.png)
