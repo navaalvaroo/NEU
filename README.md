@@ -8,3 +8,6 @@ Programa diseñado para reducir el espacio de tu galeria significativamente, si 
 ![segundo paso imagen](codigo/extra/readme-2.png)
 **Copia** las **fotos** y **videos**, en la **carpeta entrada**.
 ![tercer paso imagen](codigo/extra/readme-3.png)
+
+## 🚀 Resultados
+![resultados](codigo/extra/readme-4.png)
